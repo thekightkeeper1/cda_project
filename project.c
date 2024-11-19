@@ -7,6 +7,119 @@
 void ALU(unsigned A,unsigned B,char ALUControl,unsigned *ALUresult,char *Zero)
 {
 
+    if (ALUControl == 0b000)
+    {
+        //Z = A+B.
+        *ALUresult = add(A, B);
+    }
+
+    if (ALUControl == 0b001)
+    {
+        //Z = A-B.
+        *ALUresult = sub(A, B);
+    }
+
+    if (ALUControl == 0b010)
+    {
+        //If A < B, Z=1; Otherwise, Z=0.
+        A = twoscomplement(A);
+        B = twoscomplement(B);
+
+        if (A < B)
+        {
+            *ALUresult = 1;
+        }
+        else
+        {
+            *ALUresult = 0;
+        }
+    }
+
+    if (ALUControl == 0b011)
+    {
+        //If A<B, Z=1. Otherwise, Z=0 (A and B are unsigned.)
+
+        if (A < B)
+        {
+            *ALUresult = 1;
+        }
+        else
+        {
+            *ALUresult = 0;
+        }
+    }
+
+    if (ALUControl == 0b100)
+    {
+        //Z = A AND B
+        *ALUresult = and(A, B);
+    }
+
+    if (ALUControl == 0b101)
+    {
+        //Z = A OR B
+        *ALUresult or(A, B);
+    }
+
+    if (ALUControl == 0b110)
+    {
+        *ALUresult = shift16(B);
+    }
+
+    if (ALUControl == 0b111)
+    {
+        *ALUresult = not(A);
+    }
+
+    if(*ALUresult == 0)
+    {
+        *Zero = 1;
+    }
+    else
+    {
+        *Zero = 0;
+    }
+
+    return;
+}
+
+unsigned not(unsigned A)
+{
+    return ~A;
+}
+unsigned shift16(unsigned B)
+{
+    return B << 16;
+}
+unsigned or(unsigned A, unsigned B)
+{
+    return A | B;
+}
+unsigned and(unsigned A, unsigned B)
+{
+    return A & B;
+}
+unsigned twoscomplement(unsigned input)
+{
+    unsigned mask = 0b1<<31;
+    unsigned maskCalc = input & mask;
+
+    if (maskCalc == 1)
+    {
+        return ~input + 0b1;
+    }
+    else
+    {
+        return input;
+    }
+}
+unsigned add(unsigned A, unsigned B)
+{
+    return A+B;
+}
+unsigned sub(unsigned A, unsigned B)
+{
+    return A-B;
 }
 
 /* instruction fetch */
@@ -43,7 +156,8 @@ int instruction_decode(unsigned op,struct_controls *controls)
 /* 5 Points */
 void read_register(unsigned r1,unsigned r2,unsigned *Reg,unsigned *data1,unsigned *data2)
 {
-
+    *data1 = Reg[r1];
+    *data2 = Reg[r2];
 }
 
 
