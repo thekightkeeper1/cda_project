@@ -18,9 +18,8 @@ int instruction_fetch(unsigned PC,unsigned *Mem,unsigned *instruction)
         return 1; // HALT, the PC is not word aligned
     }
     // Check out-of-bounds
-    if (PC > MAX_MEM || PC < MIN_MEM) {
-        return 1; // HALT, out of bounds of our 64kb mem
-
+    if (PC > MAX_MEM || PC < MIN_MEM)
+        return 1; // HALT, out of bounds
 }
 
 
