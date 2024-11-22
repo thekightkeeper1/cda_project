@@ -2,16 +2,16 @@
 #define MIN_MEM 0x0000
 #define MAX_MEM 0xFFFF
 
-unsigned signed2_to_unsigned(unsigned input);
 
 unsigned signed2_to_unsigned(unsigned input) {
     const unsigned mask = 0b1 << 31;
     const unsigned maskCalc = input & mask;
 
-    if (maskCalc != 0) {  // Negative number, need to convert to unsigned representaion
+    if (maskCalc != 0) {
+        // Negative number, need to convert to unsigned representaion
         input = ~input + 0b1;
     }
-        return input;
+    return input;
 }
 
 /* ALU */
@@ -91,7 +91,7 @@ int instruction_fetch(unsigned PC, unsigned *Mem, unsigned *instruction) {
     if (PC < MIN_MEM || PC > MAX_MEM)
         return 1; // HALT, out of bounds
 
-    *instruction = Mem[PC>>2]; // Mem is array of words, but PC is in bytes, so we need to convert PC by dividing by 4
+    *instruction = Mem[PC >> 2]; // Mem is array of words, but PC is in bytes, so we need to convert PC by dividing by 4
     return 0; // Success, don't halt
 }
 
@@ -100,12 +100,141 @@ int instruction_fetch(unsigned PC, unsigned *Mem, unsigned *instruction) {
 /* 10 Points */
 void instruction_partition(unsigned instruction, unsigned *op, unsigned *r1, unsigned *r2, unsigned *r3,
                            unsigned *funct, unsigned *offset, unsigned *jsec) {
+    // Making bitmasks to obtain relavant bits from the instrutions
+    unsigned opM = 0x3f << 26; // opcode = [31:26]
+    unsigned r1M = 0x1f << 21; // read_reg1 = [25:21]
+    unsigned r2M = 0x1f << 16; // read_reg2 or write_reg = [20:16]
+    unsigned r3M = 0x1f << 11; // write_reg = [15:11]
+    unsigned jsecM = 0x3ffffff; // jump_addr = [25:0]
+    unsigned offsetM = 0xffff; // sign_extended = [15:0]
+    unsigned functM = 0x1f; // r_type_funct = [5:0]
+
+    // Bitmasking and writing those bits
+    // We also have to right shift all the extra 0 out of some
+    *op = (instruction & opM) >> 26;
+    *r1 = (instruction & r1M) >> 21;
+    *r2 = (instruction & r2M) >> 16;
+    *r3 = (instruction & r3M) >> 11;
+    *jsec = instruction & jsecM;
+    *offset = instruction & offsetM;
+    *funct = instruction & functM;
 }
 
 
 /* instruction decode */
 /* 15 Points */
 int instruction_decode(unsigned op, struct_controls *controls) {
+    // This reads the OP and assigns the control_signals
+    // The 14 instructions we actually have to use are at the bottom of project guidlines
+    // Also study set 6 to help. And mips reference
+
+    switch (op) {
+        case 0b000000: // R-type instruction (add, sub, or, and, slt, sltu)
+            controls->RegDst = 0b1; // want to write to register in bit [15:11] for all R type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // not branching
+            controls->MemRead = 0b0; // not reading memory
+            controls->MemtoReg = 0b0; // want alu output to go to write data register
+            controls->ALUOp = 0b111; // don't know yet, look at our funct bit [5:0]
+            controls->MemWrite = 0b0; // not writing to memory
+            controls->ALUSrc = 0b0; // read data 2 to alu
+            controls->RegWrite = 0x1; // write data to register
+            break;
+        case 0b100011: // I-Type load word
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16]for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // not branching
+            controls->MemRead = 0b1; // reading memory (like ofc we are)
+            controls->MemtoReg = 0b1; // Set mux to output mem instead of alu to the register file
+            controls->ALUOp = 0b0; // Set the
+            controls->MemWrite = 0b0; // not writing to memory
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type
+            controls->RegWrite = 0x1; // Enable reg-file writing
+            break;
+        case 0b101011: // I-Type store word
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // not branching
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b0; // Don't care
+            controls->MemWrite = 0b1; // Writing to memory
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type
+            controls->RegWrite = 0x1; // Not writing to reg file
+            break;
+        case 001111: // I-Type load upper immediate
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // not branching
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b110; // Left Shift the value 16
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type
+            controls->RegWrite = 0x1; // Writing the immediate value
+            break;
+
+        case 000100: // I-Type branch if equal
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b1; // Branching should be enabled
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b001; // Subtraction to check for equality
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b0; // ALU input mux set to read reg 2 for I-type beq ONLY
+            controls->RegWrite = 0b0; // Not writing to registers
+            break;
+        case 001010: // I type set less than immediate
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // Not branching
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b010; // Set less than
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type (not beq)
+            controls->RegWrite = 0b1; // Writing result to reg
+            break;
+        case 001011: // I-type set less than immediate unsigned
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b0; // not jumping
+            controls->Branch = 0b0; // Not branching
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b011; // Set less than unsigned
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type (not beq)
+            controls->RegWrite = 0b1; // Writing result to reg
+            break;
+        case 000010: // J-type jump
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b1; // Jumping
+            controls->Branch = 0b0; // Not branching
+            controls->MemRead = 0b0; // Not reading mem
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b000; // Don't care for alu
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b0; // ALU set to sign-extended for all I type (not beq)
+            controls->RegWrite = 0b0; // Not writing to mem
+            break;
+        case 001000:  // I-type add immediate
+            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->Jump = 0b0; // Not jumping
+            controls->Branch = 0b0; // Not branching
+            controls->MemRead = 0b0; // Writing should come from the alu
+            controls->MemtoReg = 0b0; // Not reading mem
+            controls->ALUOp = 0b000; // Add operation for the alu
+            controls->MemWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b0; // ALU set to sign-extended for all I type (not beq)
+            controls->RegWrite = 0b1; // Allow writing to reg
+            break;
+
+
+        default: // Not a valid op, so halt
+            return 1;
+    }
+    return 0;
 }
 
 /* Read Register */
@@ -130,13 +259,48 @@ int ALU_operations(unsigned data1, unsigned data2, unsigned extended_value, unsi
 /* Read / Write Memory */
 /* 10 Points */
 int rw_memory(unsigned ALUresult, unsigned data2, char MemWrite, char MemRead, unsigned *memdata, unsigned *Mem) {
+    //This just makes sure that the memory address is word-aligned.
+    //(MIPS handles memory in 4-byte words.)
+    //If this case isn't true, then that means everything that happens below
+    //is voided.
+
+    if (ALUresult % 4 != 0 && (MemRead == 0b1 || MemWrite == 0b1)) {
+        // Halt if we are supposed to do rw operations
+        // But we are not word aligned
+            return 1;
+    }
+    //If we're in Read mode.
+    if (MemRead == 1 && ALUresult % 4 == 0) {
+        *memdata = Mem[ALUresult >> 2];  // Divide by for to get the index of the word
+    }
+
+    //If we're in Write mode.
+    if (MemWrite == 1 && ALUresult % 4 == 0) {
+        Mem[ALUresult >> 2] = data2;  // Divide by four to get the index of the word
+    }
+    return 0;
 }
 
 
-/* Write Register */
+//* Write Register */
 /* 10 Points */
-void write_register(unsigned r2, unsigned r3, unsigned memdata, unsigned ALUresult, char RegWrite, char RegDst,
-                    char MemtoReg, unsigned *Reg) {
+void write_register(unsigned r2,unsigned r3,unsigned memdata,unsigned ALUresult,char RegWrite,char RegDst,char MemtoReg,unsigned *Reg)
+{
+    if (RegWrite == 1)
+    {
+        unsigned writingIndex = r2;
+        unsigned resultValue = ALUresult;
+        if (MemtoReg == 1)
+        {
+            resultValue = memdata;
+        }
+        else if (MemtoReg == 0 && RegDst == 1)
+        {
+            writingIndex = r3;
+        }
+
+        Reg[writingIndex] = resultValue;
+    }
 }
 
 /* PC update */
