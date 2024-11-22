@@ -162,7 +162,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type
             controls->RegWrite = 0x1; // Not writing to reg file
             break;
-        case 001111: // I-Type load upper immediate
+        case 0b001111: // I-Type load upper immediate
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // not jumping
             controls->Branch = 0b0; // not branching
@@ -174,7 +174,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->RegWrite = 0x1; // Writing the immediate value
             break;
 
-        case 000100: // I-Type branch if equal
+        case 0b000100: // I-Type branch if equal
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // not jumping
             controls->Branch = 0b1; // Branching should be enabled
@@ -185,7 +185,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUSrc = 0b0; // ALU input mux set to read reg 2 for I-type beq ONLY
             controls->RegWrite = 0b0; // Not writing to registers
             break;
-        case 001010: // I type set less than immediate
+        case 0b001010: // I type set less than immediate
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // not jumping
             controls->Branch = 0b0; // Not branching
@@ -196,7 +196,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type (not beq)
             controls->RegWrite = 0b1; // Writing result to reg
             break;
-        case 001011: // I-type set less than immediate unsigned
+        case 0b001011: // I-type set less than immediate unsigned
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // not jumping
             controls->Branch = 0b0; // Not branching
@@ -207,7 +207,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type (not beq)
             controls->RegWrite = 0b1; // Writing result to reg
             break;
-        case 000010: // J-type jump
+        case 0b000010: // J-type jump
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b1; // Jumping
             controls->Branch = 0b0; // Not branching
@@ -218,7 +218,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUSrc = 0b0; // ALU set to sign-extended for all I type (not beq)
             controls->RegWrite = 0b0; // Not writing to mem
             break;
-        case 001000:  // I-type add immediate
+        case 0b001000:  // I-type add immediate
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // Not jumping
             controls->Branch = 0b0; // Not branching
@@ -245,15 +245,34 @@ void read_register(unsigned r1, unsigned r2, unsigned *Reg, unsigned *data1, uns
 }
 
 
-/* Sign Extend */
-/* 10 Points */
-void sign_extend(unsigned offset, unsigned *extended_value) {
+void sign_extend(unsigned offset, unsigned *extended_value)
+{
+    //If negative, fill with 1s.
+    if (offset>>15 == 1)
+    {
+        *extended_value = offset | 0xffff0000;
+    }
+    else //If positive, fill with 0s.
+    {
+        *extended_value = offset & 0x0000ffff;
+    }
 }
 
 /* ALU operations */
 /* 10 Points */
 int ALU_operations(unsigned data1, unsigned data2, unsigned extended_value, unsigned funct, char ALUOp, char ALUSrc,
                    unsigned *ALUresult, char *Zero) {
+    if (ALUOp == 0b111) {
+        ALUOp = funct;
+    }
+
+    // Deciding ALU inputs based on ALU src.
+    // There is no mux for the first input, so that is constant
+    const unsigned a = data1;
+    unsigned b = data2;  // Default or don't care value
+    if (ALUSrc == 0b1) b = extended_value;
+
+    ALU(a, b, ALUOp, ALUresult, Zero);
 }
 
 /* Read / Write Memory */
