@@ -2,6 +2,24 @@
 #define MIN_MEM 0x0000
 #define MAX_MEM 0xFFFF
 
+#define FUNCT_ADD 0b100000
+#define FUNCT_SUB 0b100010
+#define FUNCT_SLT 0b101010
+#define FUNCT_SLTU 0b101011
+#define FUNCT_AND 0b100100
+#define FUNCT_OR 0b100101
+#define FUNCT_SLL 0b000000
+#define FUNCT_NOT 0b100111
+
+#define ALU_ADD 0b000
+#define ALU_SUB 0b001
+#define ALU_SLT 0b010
+#define ALU_SLTU 0b011
+#define ALU_AND 0b100
+#define ALU_OR 0b101
+#define ALU_SLL 0b110
+#define ALU_NOT 0b111
+
 
 unsigned signed2_to_unsigned(unsigned input) {
     const unsigned mask = 0b1 << 31;
@@ -18,17 +36,17 @@ unsigned signed2_to_unsigned(unsigned input) {
 /* 10 Points */
 void ALU(unsigned A, unsigned B, char ALUControl, unsigned *ALUresult, char *Zero) {
     switch (ALUControl) {
-        case 0b000:
+        case ALU_ADD:
             // Z = A + B.
             *ALUresult = A + B;
             break;
 
-        case 0b001:
+        case ALU_SUB:
             // Z = A - B.
             *ALUresult = A - B;
             break;
 
-        case 0b010:
+        case ALU_SLT:
             // If A < B, Z = 1; Otherwise, Z = 0.
             A = signed2_to_unsigned(A);
             B = signed2_to_unsigned(B);
@@ -73,9 +91,9 @@ void ALU(unsigned A, unsigned B, char ALUControl, unsigned *ALUresult, char *Zer
 
     // Setting the zero value incase something needed it
     if (*ALUresult == 0)
-        *Zero = 0;
-    else
         *Zero = 1;
+    else
+        *Zero = 0;
 }
 
 
@@ -107,7 +125,7 @@ void instruction_partition(unsigned instruction, unsigned *op, unsigned *r1, uns
     unsigned r3M = 0x1f << 11; // write_reg = [15:11]
     unsigned jsecM = 0x3ffffff; // jump_addr = [25:0]
     unsigned offsetM = 0xffff; // sign_extended = [15:0]
-    unsigned functM = 0x1f; // r_type_funct = [5:0]
+    unsigned functM = 0x3f; // r_type_funct = [5:0]
 
     // Bitmasking and writing those bits
     // We also have to right shift all the extra 0 out of some
@@ -134,10 +152,10 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->Jump = 0b0; // not jumping
             controls->Branch = 0b0; // not branching
             controls->MemRead = 0b0; // not reading memory
-            controls->MemtoReg = 0b0; // want alu output to go to write data register
+            controls->MemtoReg = 0b0; // not reading mem
             controls->ALUOp = 0b111; // don't know yet, look at our funct bit [5:0]
             controls->MemWrite = 0b0; // not writing to memory
-            controls->ALUSrc = 0b0; // read data 2 to alu
+            controls->ALUSrc = 0b0; // read data 2 to alu for R types
             controls->RegWrite = 0x1; // write data to register
             break;
         case 0b100011: // I-Type load word
@@ -160,7 +178,7 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->ALUOp = 0b0; // Don't care
             controls->MemWrite = 0b1; // Writing to memory
             controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type
-            controls->RegWrite = 0x1; // Not writing to reg file
+            controls->RegWrite = 0b0; // Not writing to reg file
             break;
         case 0b001111: // I-Type load upper immediate
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
@@ -208,17 +226,17 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->RegWrite = 0b1; // Writing result to reg
             break;
         case 0b000010: // J-type jump
-            controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
+            controls->RegDst = 0b10; // Writing is disable therefore dont care
             controls->Jump = 0b1; // Jumping
             controls->Branch = 0b0; // Not branching
             controls->MemRead = 0b0; // Not reading mem
-            controls->MemtoReg = 0b0; // Not reading mem
+            controls->MemtoReg = 0b10; // Writing to reg is disabled therefore dont care
             controls->ALUOp = 0b000; // Don't care for alu
             controls->MemWrite = 0b0; // Not writing to mem
-            controls->ALUSrc = 0b0; // ALU set to sign-extended for all I type (not beq)
-            controls->RegWrite = 0b0; // Not writing to mem
+            controls->ALUSrc = 0b10; // Not using ALU so dont care
+            controls->RegWrite = 0b0; // Not writing to reg
             break;
-        case 0b001000:  // I-type add immediate
+        case 0b001000: // I-type add immediate
             controls->RegDst = 0b0; // Set the mux to read from bit [20:16] (0b0) for all I-type
             controls->Jump = 0b0; // Not jumping
             controls->Branch = 0b0; // Not branching
@@ -226,8 +244,8 @@ int instruction_decode(unsigned op, struct_controls *controls) {
             controls->MemtoReg = 0b0; // Not reading mem
             controls->ALUOp = 0b000; // Add operation for the alu
             controls->MemWrite = 0b0; // Not writing to mem
-            controls->ALUSrc = 0b0; // ALU set to sign-extended for all I type (not beq)
-            controls->RegWrite = 0b1; // Allow writing to reg
+            controls->ALUSrc = 0b1; // ALU set to sign-extended for all I type (not beq)
+            controls->RegWrite = 0b1; // Allow writing alu result to reg
             break;
 
 
@@ -245,16 +263,13 @@ void read_register(unsigned r1, unsigned r2, unsigned *Reg, unsigned *data1, uns
 }
 
 
-void sign_extend(unsigned offset, unsigned *extended_value)
-{
+void sign_extend(unsigned offset, unsigned *extended_value) {
     //If negative, fill with 1s.
-    if (offset>>15 == 1)
+    if (offset >> 15 == 1) {
+        *extended_value = 0xffff0000 | offset;
+    } else //If positive, fill with 0s.
     {
-        *extended_value = offset | 0xffff0000;
-    }
-    else //If positive, fill with 0s.
-    {
-        *extended_value = offset & 0x0000ffff;
+        *extended_value = 0x00000000 | offset;
     }
 }
 
@@ -263,16 +278,43 @@ void sign_extend(unsigned offset, unsigned *extended_value)
 int ALU_operations(unsigned data1, unsigned data2, unsigned extended_value, unsigned funct, char ALUOp, char ALUSrc,
                    unsigned *ALUresult, char *Zero) {
     if (ALUOp == 0b111) {
-        ALUOp = funct;
+        // Must be R type, so we decide alu operation from funct
+        switch (funct) {
+            case FUNCT_ADD:
+                ALUOp = ALU_ADD;
+                break;
+            case FUNCT_SUB: // Subtract
+                ALUOp = ALU_SUB;
+                break;
+            case FUNCT_SLT:
+                ALUOp = ALU_SLT;
+                break;
+            case FUNCT_SLTU:
+                ALUOp = ALU_SLTU;
+                break;
+            case FUNCT_AND:
+                ALUOp = ALU_AND;
+                break;
+            case FUNCT_OR:
+                ALUOp = ALU_OR;
+                break;
+            case FUNCT_SLL:
+                ALUOp = ALU_SLL;
+                break;
+            case FUNCT_NOT:
+                ALUOp = ALU_NOT;
+                break;
+        }
     }
 
     // Deciding ALU inputs based on ALU src.
     // There is no mux for the first input, so that is constant
     const unsigned a = data1;
-    unsigned b = data2;  // Default or don't care value
+    unsigned b = data2; // Default or don't care value
     if (ALUSrc == 0b1) b = extended_value;
 
     ALU(a, b, ALUOp, ALUresult, Zero);
+    return 0;
 }
 
 /* Read / Write Memory */
@@ -286,16 +328,16 @@ int rw_memory(unsigned ALUresult, unsigned data2, char MemWrite, char MemRead, u
     if (ALUresult % 4 != 0 && (MemRead == 0b1 || MemWrite == 0b1)) {
         // Halt if we are supposed to do rw operations
         // But we are not word aligned
-            return 1;
+        return 1;
     }
     //If we're in Read mode.
     if (MemRead == 1 && ALUresult % 4 == 0) {
-        *memdata = Mem[ALUresult >> 2];  // Divide by for to get the index of the word
+        *memdata = Mem[ALUresult >> 2]; // Divide by for to get the index of the word
     }
 
     //If we're in Write mode.
     if (MemWrite == 1 && ALUresult % 4 == 0) {
-        Mem[ALUresult >> 2] = data2;  // Divide by four to get the index of the word
+        Mem[ALUresult >> 2] = data2; // Divide by four to get the index of the word
     }
     return 0;
 }
@@ -303,22 +345,21 @@ int rw_memory(unsigned ALUresult, unsigned data2, char MemWrite, char MemRead, u
 
 //* Write Register */
 /* 10 Points */
-void write_register(unsigned r2,unsigned r3,unsigned memdata,unsigned ALUresult,char RegWrite,char RegDst,char MemtoReg,unsigned *Reg)
-{
-    if (RegWrite == 1)
-    {
+void write_register(unsigned r2, unsigned r3, unsigned memdata, unsigned ALUresult, char RegWrite, char RegDst,
+                    char MemtoReg, unsigned *Reg) {
+    if (RegWrite == 1) {
         unsigned writingIndex = r2;
         unsigned resultValue = ALUresult;
-        if (MemtoReg == 1)
+        if (MemtoReg == 1) // Mux for bringing data from mem or reg
         {
             resultValue = memdata;
         }
-        else if (MemtoReg == 0 && RegDst == 1)
+        if (RegDst == 1) // Mux for writing to the bits given by r2, or r3
         {
             writingIndex = r3;
         }
 
-        Reg[writingIndex] = resultValue;
+        Reg[writingIndex] = resultValue; // Not word aligning. E.g. r8 == 0x8 == Reg[8]
     }
 }
 
